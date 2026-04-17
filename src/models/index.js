@@ -5,13 +5,23 @@ const mongoose = require('mongoose');
 const config = require('../core/config');
 const logger = require('../core/logger')('app');
 
-// Join the database connection string
-const connectionString = new URL(config.database.connection);
-connectionString.pathname += config.database.name;
+// MongoDB Atlas connection with proper options
+const mongooseOptions = {
+  retryWrites: true,
+  w: 'majority',
+  connectTimeoutMS: 10000,
+  socketTimeoutMS: 45000,
+  serverSelectionTimeoutMS: 5000,
+};
 
-mongoose.connect(`${connectionString.toString()}`);
+mongoose.connect(config.database.connection, mongooseOptions);
 
 const db = mongoose.connection;
+
+db.on('error', (err) => {
+  logger.error(err, 'MongoDB connection error');
+});
+
 db.once('open', () => {
   logger.info('Successfully connected to MongoDB');
 });
@@ -27,9 +37,15 @@ fs.readdirSync(__dirname)
       file.indexOf('.') !== 0 && file !== basename && file.slice(-3) === '.js'
   )
   .forEach((file) => {
-    // eslint-disable-next-line import/no-dynamic-require, global-require
-    const model = require(path.join(__dirname, file))(mongoose);
-    dbExports[model.modelName] = model;
+    const exportedData = require(path.join(__dirname, file))(mongoose);
+
+    if (exportedData && exportedData.modelName) {
+      dbExports[exportedData.modelName] = exportedData;
+    } else if (exportedData && typeof exportedData === 'object') {
+      Object.keys(exportedData).forEach((key) => {
+        dbExports[key] = exportedData[key];
+      });
+    }
   });
 
 module.exports = dbExports;
